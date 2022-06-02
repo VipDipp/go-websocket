@@ -42,8 +42,6 @@ type Client struct {
 
 	// Buffered channel of outbound messages.
 	send chan []byte
-
-	buf chan []byte
 }
 
 func failOnError(err error, msg string) {
@@ -140,23 +138,6 @@ func (c *Client) receive() {
 	<-forever
 }
 
-func (c *Client) Run() {
-	pool := make(chan []byte, 64)
-	for {
-		select {
-		case output := <-c.buf:
-			pool <- output
-			go c.work(pool)
-		}
-	}
-}
-
-func (c *Client) work(pool <-chan []byte) {
-	for msg := range pool {
-		c.hub.broadcast <- []byte(msg)
-	}
-}
-
 // serveWs handles websocket requests from the peer.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -164,10 +145,9 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), buf: make(chan []byte, 256)}
+	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
 	client.hub.register <- client
 
-	go client.Run()
 	go client.receive()
 	go client.writePump()
 }

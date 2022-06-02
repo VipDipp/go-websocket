@@ -87,8 +87,8 @@ func main() {
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
-
-	go Run()
+	
+	go websocket.Run()
 	go websocket.PrometheusRun()
 
 	go func() {

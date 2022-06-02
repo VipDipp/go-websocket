@@ -24,41 +24,22 @@ func measureResponseDuration(next ProtectedHandler) ProtectedHandler {
 	}
 }
 
-var buf = make(chan []byte, 64)
-
-func Run() {
-	pool := make(chan []byte, 64)
-	for {
-		select {
-		case output := <-buf:
-			pool <- output
-			go work(pool)
-		}
-	}
-}
-
-func work(pool <-chan []byte) {
-	for msg := range pool {
-		websocket.Send(string(msg))
-	}
-}
-
 func getMeHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
 	w.Write([]byte(u.FavoriteCake + "\n"))
 	w.Write([]byte(u.Email))
-	buf <- []byte("Someone got himself")
+	websocket.Send("Someone got himself")
 	websocket.UserInfoCount.Inc()
 }
 
 func getCakeHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
 	w.Write([]byte(u.FavoriteCake))
-	buf <- []byte("Someone got cake")
+	websocket.Send("Someone got cake")
 	websocket.GivenCakesCount.Inc()
 }
 
 func getEmailHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
 	w.Write([]byte(u.Email))
-	buf <- []byte("Someone got email")
+	websocket.Send("Someone got email")
 }
 
 func (uServ UserService) updateCakeHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
@@ -87,7 +68,7 @@ func (uServ UserService) updateCakeHandler(w http.ResponseWriter, r *http.Reques
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("cake updated"))
-	buf <- []byte("Someone updated cake")
+	websocket.Send("Someone updated cake")
 }
 
 func (uServ UserService) updateEmailHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
@@ -119,7 +100,7 @@ func (uServ UserService) updateEmailHandler(w http.ResponseWriter, r *http.Reque
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("email updated"))
-	buf <- []byte("Someone updated email")
+	websocket.Send("Someone updated email")
 }
 
 func (uServ UserService) updatePasswordHandler(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
@@ -151,5 +132,5 @@ func (uServ UserService) updatePasswordHandler(w http.ResponseWriter, r *http.Re
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("password updated"))
-	buf <- []byte("Someone updated password")
+	websocket.Send("Someone updated password")
 }
