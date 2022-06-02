@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"websocket/websocket"
 )
 
 type User struct {
@@ -34,28 +35,52 @@ type UserRegisterParams struct {
 	FavoriteCake string `json:"favorite_cake"`
 }
 
-func validateRegisterParams(p *UserRegisterParams) error {
+func validateEmail(p *UserRegisterParams) error {
 	if p.Email == "" {
-		return errors.New("The email field is required!")
+		return errors.New("the email field is required")
 	}
 	// 1. Email is valid
 	_, err := mail.ParseAddress(p.Email)
 	if err != nil {
-		return errors.New("The email field have to be a valid email address!")
+		return errors.New("the email field have to be a valid email address")
 	}
+	return nil
+}
+
+func validatePassword(p *UserRegisterParams) error {
 	// 2. Password at least 8 symbols
 	if len(p.Password) < 8 {
-		return errors.New("Password at least 8 symbols")
+		return errors.New("password at least 8 symbols")
 	}
+	return nil
+}
+
+func validateCake(p *UserRegisterParams) error {
 	// 3. Favorite cake not empty
 	if p.FavoriteCake == "" {
-		return errors.New("Favorite can't be empty")
+		return errors.New("favorite can't be empty")
 	}
 	// 4. Favorite cake only alphabetic
 	for _, c := range p.FavoriteCake {
 		if !((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) {
-			return errors.New("Favorite can be only alphabetic")
+			return errors.New("favorite can be only alphabetic")
 		}
+	}
+	return nil
+}
+
+func validateRegisterParams(p *UserRegisterParams) error {
+	err := validateEmail(p)
+	if err != nil {
+		return err
+	}
+	err = validatePassword(p)
+	if err != nil {
+		return err
+	}
+	err = validateCake(p)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -78,7 +103,6 @@ func (u *UserService) Register(w http.ResponseWriter, r *http.Request) {
 		handleError(err, w)
 		return
 	}
-
 	passwordDigest := md5.New().Sum([]byte(params.Password))
 	newUser := User{
 		Email:          params.Email,
@@ -94,5 +118,5 @@ func (u *UserService) Register(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte("registered"))
-	RegisteredUsersCount.Inc()
+	websocket.RegisteredUsersCount.Inc()
 }

@@ -30,6 +30,10 @@ type UserUnbanParams = EmailParams
 func banUserHandler(w http.ResponseWriter, r *http.Request, executor User, users UserRepository) {
 	params := &UserBanParams{}
 	err := json.NewDecoder(r.Body).Decode(params)
+	if err != nil {
+		handleError(err, w)
+		return
+	}
 
 	if _, err := mail.ParseAddress(params.Email); err != nil {
 		handleError(err, w)
@@ -117,8 +121,7 @@ func inspectHandler(w http.ResponseWriter, r *http.Request, _ User, users UserRe
 			banStr = "unbanned"
 		}
 		HistoryStr += "-- was " + banStr + " at " +
-			query.Time.Format("30 October 2021 23:00:00") +
-			" by " + query.Executor + "\n"
+			query.Time.Format(time.UnixDate) + " by " + query.Executor + "\n"
 	}
 
 	w.WriteHeader(http.StatusOK)

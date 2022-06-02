@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"time"
+	"websocket/websocket"
 
 	"github.com/gorilla/mux"
 )
@@ -39,40 +40,43 @@ func (uServ *UserService) addAdmin() error {
 	}
 	return nil
 }
+
+var JwtService, jwt_err = NewJWTService("pubkey.rsa", "privkey.rsa")
+
 func main() {
+	if jwt_err != nil {
+		panic(jwt_err)
+	}
+
 	os.Setenv("CAKE_ADMIN_EMAIL", "admin@mail.com")
 	os.Setenv("CAKE_ADMIN_PASSWORD", "adminadmin")
 
 	r := mux.NewRouter()
 
-	Hub := newHub()
-	go Hub.run()
+	Hub := websocket.NewHub()
+	go Hub.Run()
 
 	users := NewInMemoryUserStorage()
 	userService := UserService{
 		repository: users,
 	}
 
-	jwtService, err := NewJWTService("pubkey.rsa", "privkey.rsa")
-	if err != nil {
-		panic(err)
-	}
+	r.HandleFunc("/admin/ban", logRequest(JwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(banUserHandler)))).Methods(http.MethodPost)
+	r.HandleFunc("/admin/unban", logRequest(JwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(unbanUserHandler)))).Methods(http.MethodPost)
+	r.HandleFunc("/admin/inspect", logRequest(JwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(inspectHandler)))).Methods(http.MethodGet)
 
-	r.HandleFunc("/admin/ban", logRequest(jwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(banUserHandler)))).Methods(http.MethodPost)
-	r.HandleFunc("/admin/unban", logRequest(jwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(unbanUserHandler)))).Methods(http.MethodPost)
-	r.HandleFunc("/admin/inspect", logRequest(jwtService.jwtAuthAdmin(userService.repository, measureResponseDuration(inspectHandler)))).Methods(http.MethodGet)
-
-	r.HandleFunc("/cake", logRequest(jwtService.jwtAuth(users, measureResponseDuration(getCakeHandler)))).Methods(http.MethodGet)
 	r.HandleFunc("/user/register", logRequest(userService.Register)).Methods(http.MethodPost)
-	r.HandleFunc("/user/jwt", logRequest(wrapJwt(jwtService, userService.JWT))).Methods(http.MethodPost)
+	r.HandleFunc("/user/jwt", logRequest(wrapJwt(JwtService, userService.JWT))).Methods(http.MethodPost)
 
-	r.HandleFunc("/user/me", logRequest(jwtService.jwtAuth(users, measureResponseDuration(getMeHandler)))).Methods(http.MethodGet)
-	r.HandleFunc("/user/favorite_cake", logRequest(jwtService.jwtAuth(users, measureResponseDuration(userService.updateCakeHandler)))).Methods(http.MethodPost)
-	r.HandleFunc("/user/email", logRequest(jwtService.jwtAuth(users, measureResponseDuration(userService.updateEmailHandler)))).Methods(http.MethodPost)
-	r.HandleFunc("/user/password", logRequest(jwtService.jwtAuth(users, measureResponseDuration(userService.updatePasswordHandler)))).Methods(http.MethodPost)
+	r.HandleFunc("/user/me", logRequest(JwtService.jwtAuth(users, measureResponseDuration(getMeHandler)))).Methods(http.MethodGet)
+	r.HandleFunc("/user/my_cake", logRequest(JwtService.jwtAuth(users, measureResponseDuration(getCakeHandler)))).Methods(http.MethodGet)
+	r.HandleFunc("/user/my_email", logRequest(JwtService.jwtAuth(users, measureResponseDuration(getEmailHandler)))).Methods(http.MethodGet)
 
+	r.HandleFunc("/user/favorite_cake", logRequest(JwtService.jwtAuth(users, measureResponseDuration(userService.updateCakeHandler)))).Methods(http.MethodPut)
+	r.HandleFunc("/user/email", logRequest(JwtService.jwtAuth(users, measureResponseDuration(userService.updateEmailHandler)))).Methods(http.MethodPut)
+	r.HandleFunc("/user/password", logRequest(JwtService.jwtAuth(users, measureResponseDuration(userService.updatePasswordHandler)))).Methods(http.MethodPut)
 	r.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(Hub, w, r)
+		websocket.ServeWs(Hub, w, r)
 	})
 
 	userService.addAdmin()
@@ -83,8 +87,10 @@ func main() {
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
+
 	go Run()
-	go PrometheusRun()
+	go websocket.PrometheusRun()
+
 	go func() {
 		<-interrupt
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -92,8 +98,8 @@ func main() {
 		srv.Shutdown(ctx)
 	}()
 
-	log.Printf("Server stared, press cntrl + C to stop ")
-	err = srv.ListenAndServe()
+	log.Printf("Server started, press cntrl + C to stop ")
+	err := srv.ListenAndServe()
 	if err != nil {
 		log.Println("Server exited with error:", err)
 	}

@@ -1,9 +1,7 @@
-package main
+package websocket
 
 import (
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -28,7 +26,7 @@ var (
 
 	buckets = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
-	responseTimeHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	ResponseTimeHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "namespace",
 		Name:      "http_server_request_duration_seconds",
 		Help:      "Histogram of response time for handler in seconds",
@@ -37,27 +35,14 @@ var (
 )
 
 //statusRecorder to record the status code from the ResponseWriter
-type statusRecorder struct {
+type StatusRecorder struct {
 	http.ResponseWriter
-	statusCode int
+	StatusCode int
 }
 
-func (rec *statusRecorder) WriteHeader(statusCode int) {
-	rec.statusCode = statusCode
+func (rec *StatusRecorder) WriteHeader(statusCode int) {
+	rec.StatusCode = statusCode
 	rec.ResponseWriter.WriteHeader(statusCode)
-}
-
-func measureResponseDuration(next ProtectedHandler) ProtectedHandler {
-	return func(w http.ResponseWriter, r *http.Request, u User, users UserRepository) {
-		start := time.Now()
-		rec := statusRecorder{w, 200}
-
-		next(w, r, u, users)
-
-		duration := time.Since(start)
-		statusCode := strconv.Itoa(rec.statusCode)
-		responseTimeHistogram.WithLabelValues(r.URL.Path, r.Method, statusCode).Observe(duration.Seconds())
-	}
 }
 
 // getRoutePattern returns the route pattern from the chi context there are 3 conditions
@@ -66,7 +51,7 @@ func measureResponseDuration(next ProtectedHandler) ProtectedHandler {
 // c) if nothing matches the output is undefined
 
 func PrometheusRun() {
-	prometheus.MustRegister(responseTimeHistogram)
+	prometheus.MustRegister(ResponseTimeHistogram)
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(":2112", nil)
 }

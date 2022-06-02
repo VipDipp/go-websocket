@@ -24,6 +24,13 @@ func NewJWTService(privKeyPath, pubKeyPath string) (*JWTService, error) {
 	return &JWTService{keys: keys}, nil
 }
 
+func (j *JWTService) getJWT(rw http.ResponseWriter, r *http.Request)(auth.Auth, error) {
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	jwtAuth, err := j.ParseJWT(token)
+	return jwtAuth, err
+}
+
 func (j *JWTService) jwtAuth(users UserRepository, h ProtectedHandler) http.HandlerFunc {
 	return j.jwtAuthRoleExecutor("UserRole", users, h)
 }
@@ -64,6 +71,10 @@ func (u *UserService) JWT(w http.ResponseWriter, r *http.Request, jwtService *JW
 	}
 
 	token, err := jwtService.GenearateJWT(user)
+	if err != nil {
+		handleError(err, w)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(token))
@@ -73,9 +84,7 @@ type ProtectedHandler func(rw http.ResponseWriter, r *http.Request, u User, user
 
 func (j *JWTService) jwtAuthRoleExecutor(AccessRole string, users UserRepository, h ProtectedHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		jwtAuth, err := j.ParseJWT(token)
+		jwtAuth, err := j.getJWT(rw, r)
 		if err != nil {
 			handleError(errors.New("unauthorized"), rw)
 			return
@@ -98,6 +107,7 @@ func (j *JWTService) jwtAuthRoleExecutor(AccessRole string, users UserRepository
 				return
 			}
 		}
+
 		h(rw, r, user, users)
 	}
 }

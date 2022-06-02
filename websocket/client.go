@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package websocket
 
 import (
-	"bytes"
 	"log"
 	"net/http"
 	"time"
@@ -23,14 +22,10 @@ const (
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer.
-	maxMessageSize = 512
 )
 
 var (
 	newline = []byte{'\n'}
-	space   = []byte{' '}
 )
 
 var upgrader = websocket.Upgrader{
@@ -51,36 +46,9 @@ type Client struct {
 	buf chan []byte
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-//
-// The application runs readPump in a per-connection goroutine. The application
-// ensures that there is at most one reader on a connection by executing all
-// reads from this goroutine.
-
 func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
-	}
-}
-
-func (c *Client) readPump() {
-	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
-	}()
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	for {
-		_, message, err := c.conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
-			break
-		}
-		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		c.hub.broadcast <- message
 	}
 }
 
@@ -174,15 +142,11 @@ func (c *Client) receive() {
 
 func (c *Client) Run() {
 	pool := make(chan []byte, 64)
-	i := 1
 	for {
 		select {
 		case output := <-c.buf:
 			pool <- output
-			if i <= 64 {
-				go c.work(pool)
-				i++
-			}
+			go c.work(pool)
 		}
 	}
 }
@@ -194,7 +158,7 @@ func (c *Client) work(pool <-chan []byte) {
 }
 
 // serveWs handles websocket requests from the peer.
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -203,10 +167,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), buf: make(chan []byte, 256)}
 	client.hub.register <- client
 
-	// Allow collection of memory referenced by the caller by doing all work in
-	// new goroutines.
 	go client.Run()
 	go client.receive()
 	go client.writePump()
-	//go client.readPump()
 }
